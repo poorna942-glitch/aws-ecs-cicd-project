@@ -1,43 +1,33 @@
-name: Deploy to Amazon ECS
+name: EC2-Deployment
 
 on:
   push:
-    branches: [ "main" ]
-
-env:
-  AWS_REGION: ap-south-1
-  ECR_REPOSITORY: poorna-app-repo
-  ECS_SERVICE: poorna-service
-  ECS_CLUSTER: poorna-cluster
-  ECS_TASK_DEFINITION: poorna-task
+    branches: [ main ] # Main branch la code push panna ithu run agum
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@master
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Clone or Pull the Repo
+            if [ -d "~/my-app" ]; then
+              cd ~/my-app && git pull origin main
+            else
+              git clone https://github.com/poorna942-glitch/aws-ecs-cicd-project.git ~/my-app
+              cd ~/my-app
+            fi
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to Amazon ECR
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Deploy to Amazon ECS
-        run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --force-new-deployment
+            # Build and Restart Container
+            sudo docker build -t aitech-cicd .
+            sudo docker stop aitech-web || true
+            sudo docker rm aitech-web || true
+            sudo docker run -d -p 80:80 --name aitech-web aitech-cicd
